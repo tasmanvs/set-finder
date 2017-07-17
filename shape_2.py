@@ -3,6 +3,7 @@ import matplotlib.pyplot as plt
 import imutils
 import numpy as np
 
+import sys # for testing
 
 #ok I don't even need this. Each coord could just be stored in a numpy array
 class coord(object):
@@ -40,14 +41,13 @@ class coord(object):
 		return [self.x, self.y]
 
 # should change this to create a seperate image for each card
-def createContours(imageFile):
-	# import image
-	image = cv2.imread(imageFile)
+def createContours(image):
+
 
 	# preprocess the image
 	gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
 	# blurred = cv2.GaussianBlur(gray, (5, 5), 0)
-	thresh = cv2.threshold(gray, 220, 255, cv2.THRESH_BINARY)[1]
+	thresh = cv2.threshold(gray, 200, 255, cv2.THRESH_BINARY)[1]
 
 	# find contours in the thresholded image
 	cnts = cv2.findContours(thresh.copy(), cv2.RETR_EXTERNAL,
@@ -70,7 +70,7 @@ def createContours(imageFile):
 	boundingRects_points = []
 	masks = [image[b[1]:b[1]+b[3], b[0]:b[0]+b[2]] for b in boundingRects]
 	
-	return image, cnts
+	return cnts
 
 #contour is a numpy array
 # only good where images are aligned with frame. Could fix by finding 4 max in second derivative of the contour
@@ -85,9 +85,9 @@ def findContourCorners(contour, image):
 	br = coord(0,0)
 
 	for point in contour:
-		print "point is", point
+		# print "point is", point
 		x,y = point[0][0],point[0][1]
-		print "    ",x,y
+		# print "    ",x,y
 		if (x + y >= topright):
 			tr = coord(x,y)
 			topright = x + y
@@ -101,14 +101,14 @@ def findContourCorners(contour, image):
 			bl = coord(x,y)
 			bottomleft = -1*x - y
 
-	cv2.drawContours(image, [contour], -1, (0,255,0), 2)
+	# cv2.drawContours(image, [contour], -1, (0,255,0), 2)
 
 
-	circleRadius = 5
-	cv2.circle(image, (tr.x, tr.y), circleRadius, (255, 0, 0), -1)
-	cv2.circle(image, (tl.x, tl.y), circleRadius, (255, 255, 0), -1)
-	cv2.circle(image, (br.x, br.y), circleRadius, (255, 0, 255), -1)
-	cv2.circle(image, (bl.x, bl.y), circleRadius, (0, 255, 255), -1)
+	# circleRadius = 5
+	# cv2.circle(image, (tr.x, tr.y), circleRadius, (255, 0, 0), -1)
+	# cv2.circle(image, (tl.x, tl.y), circleRadius, (255, 255, 0), -1)
+	# cv2.circle(image, (br.x, br.y), circleRadius, (255, 0, 255), -1)
+	# cv2.circle(image, (bl.x, bl.y), circleRadius, (0, 255, 255), -1)
 
 	return [[tl.x, tl.y], [tr.x, tr.y], [bl.x, bl.y], [br.x, br.y]] #return the coordinates in [] form
 
@@ -130,7 +130,7 @@ def findContourCorners2(contour, image): #done with second derivative
 		slope = conts[idx].findSlope(conts[nextPoint])
 		d1_conts.append(slope)
 
-	print d1_conts
+	# print d1_conts
 	for idx, d1 in enumerate(d1_conts):
 		nextPoint = (idx+pointShift) % len(d1_conts) # loop around if we go over
 		slope = d1_conts[idx].findSlope(d1_conts[nextPoint])
@@ -184,8 +184,8 @@ def fixPerspective(contour, image):
 	pts1 = np.float32(source)
 	pts2 = np.float32(dest_rect)
 
-	print "pts1", pts1
-	print "pts2", pts2
+	# print "pts1", pts1
+	# print "pts2", pts2
 
 	M = cv2.getPerspectiveTransform(pts1,pts2)
 	dst = cv2.warpPerspective(img,M,(width,height))
@@ -193,45 +193,97 @@ def fixPerspective(contour, image):
 	return dst
 
 
+def identifyFeatures(img):
+	cnts = createContours(img)
+
+	height, width, channels = img.shape
+
+	print "height is", height
+	print "width is", width
+
+	# img = img[50:height-50, 50:width-50]  # crop the image
+	img_inv = cv2.bitwise_not(img)
+	# NOTE: its img[y: y + h, x: x + w] and *not* img[x: x + w, y: y + h]
+
+	# preprocess the image
+	gray = cv2.cvtColor(img_inv, cv2.COLOR_BGR2GRAY)
+
+	thresh = cv2.threshold(gray, 80, 255, cv2.THRESH_BINARY)[1]
+
+	# find contours in the thresholded image
+	cnts = cv2.findContours(thresh.copy(), cv2.RETR_EXTERNAL,
+		cv2.CHAIN_APPROX_SIMPLE)
+	cnts = cnts[0] if imutils.is_cv2() else cnts[1] #version check?
+
+	print "there are ", len(cnts), "contours/shapes!"
+
+
+	extents = []
+	for c in cnts:
+		cv2.drawContours(img, c, -1, (0,255,0), 1)
+		area = cv2.contourArea(c)
+		x,y,w,h = cv2.boundingRect(c)
+		rect_area = w*h
+		extents.append(float(area)/rect_area)
+
+		# cv2.rectangle(img, (x,y), (x+w, y+h), (255,0,0), 2, 8, 0 );
+
+
+	mean_val = cv2.mean(img)
+	print mean_val
+
+	avg_extents = sum(extents)/len(extents)
+
+	shape = decide_shape_from_extent(avg_extents)
+	print "the shape is", shape
+
+
+
+
+	plt.imshow(img)
+	plt.show()
+
+
+def decide_shape_from_extent(extent):
+	if (extent < 0.62):
+		return("diamond")
+	elif(extent >= 0.62 and extent < 0.805):
+		return("squiggle")
+	else:
+		return "oval"
+
+
+
+
 
 
 #----------->>>>>>>>>>>>>--------------_>>>>>>>>>>>>>>>>>...------------__>>>>>>>>>>>>>>>
 
 
-img, contours = createContours("set.jpg")
+# import image
+img = cv2.imread("set.jpg")
 
-# for rect in boundingRects:
-# 	[x,y,w,h] = [val for val in rect]
-# 	tl = [x,y]
-# 	tr = [x+w, y]
-# 	bl = [x, y-h]
-# 	br = [x+w, y-h]
-# 	point_list = [tl, tr, bl, br]
-# 	boundingRects_points.append(point_list)
+contours = createContours(img) # img is the source image numpy array
 
-plt.subplot(321),plt.imshow(img),plt.axis('off')
 
-dst = []
+dst = [] # each element in dst is a rectangular, unwarped card.
 for c in contours:
 	dst.append(fixPerspective(c, img))
 
-
-# assuming in rows of 3
-# probably either 4 or 5 cols.
-
-num_rows = len(contours) / 3 + 1 #(one more for source)
-
-
-plt.subplot(num_rows, 3, 1),plt.imshow(img),plt.axis('off') #display the source at top left
-
-for idx, d in enumerate(dst):
-	plt.subplot(num_rows, 3, num_rows*3 - idx),plt.imshow(d),plt.axis('off')
+identifyFeatures(dst[int(sys.argv[1])])
 
 
 
+# # Display the images: ------------------
+# # assuming in rows of 3
+# # probably either 4 or 5 cols.
+# num_rows = len(contours) / 3 + 1 #(one more for source)
 
+# plt.subplot(num_rows, 3, 1),plt.imshow(img),plt.axis('off') #display the source at top left
 
+# for idx, d in enumerate(dst):
+# 	plt.subplot(num_rows, 3, num_rows*3 - idx),plt.imshow(d),plt.axis('off')
 
-plt.show()
-
+# plt.show()
+# # End display the images ----------------
 
