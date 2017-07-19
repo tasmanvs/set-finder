@@ -190,6 +190,17 @@ def fixPerspective(contour, image):
 	M = cv2.getPerspectiveTransform(pts1,pts2)
 	dst = cv2.warpPerspective(img,M,(width,height))
 
+	img_inv = cv2.bitwise_not(dst)
+
+	white_inv = cv2.threshold(img_inv, 60, 255, cv2.THRESH_BINARY_INV)[1]
+
+	white = cv2.bitwise_not(white_inv)
+
+
+	plt.subplot(1, 2, 1),plt.imshow(dst),plt.axis('off'),plt.title('dst')
+	plt.subplot(1, 2, 2),plt.imshow(white_inv),plt.axis('off'),plt.title('white')
+	plt.show()
+
 	return dst
 
 
@@ -215,33 +226,78 @@ def identifyFeatures(img):
 		cv2.CHAIN_APPROX_SIMPLE)
 	cnts = cnts[0] if imutils.is_cv2() else cnts[1] #version check?
 
-	print "there are ", len(cnts), "contours/shapes!"
+	print "there are ", len(cnts), "contours/shapes!" #number of contours = number of shapes
 
-
+	#compare the area of the bounding rectangle with the area of the contour
 	extents = []
+	total_area = 0
 	for c in cnts:
-		cv2.drawContours(img, c, -1, (0,255,0), 1)
+		# cv2.drawContours(img, c, -1, (0,255,0), 1)
 		area = cv2.contourArea(c)
+		total_area += area
 		x,y,w,h = cv2.boundingRect(c)
 		rect_area = w*h
 		extents.append(float(area)/rect_area)
-
-		# cv2.rectangle(img, (x,y), (x+w, y+h), (255,0,0), 2, 8, 0 );
-
-
-	mean_val = cv2.mean(img)
-	print mean_val
+	print "total area is", total_area
 
 	avg_extents = sum(extents)/len(extents)
-
 	shape = decide_shape_from_extent(avg_extents)
 	print "the shape is", shape
 
+	#determine the color of the shapes.
+
+	singleShape = img[y:y+h, x:x+w]
+
+
+	print "the color is", findColor(singleShape)
+
+	# print "the intensity is", findShading(singleShape)
 
 
 
-	plt.imshow(img)
+def findColor(cardImage):
+
+	mean_val = cv2.mean(cardImage)
+	height, width, channels = cardImage.shape
+
+	# circleRadius = 200
+	# cv2.circle(cardImage, (width/2, height/2), circleRadius, mean_val, -1)
+
+	if (mean_val[0] > mean_val[1] and mean_val[0] > mean_val[2]):
+		return "red"
+	elif(mean_val[1] > mean_val [0] and mean_val[1] > mean_val[2]):
+		return "green"
+	else:
+		return "blue"
+
+def findShading(cardImage):
+
+
+	kernel = np.ones((5,5),np.float32)/(25)
+	blurred = cv2.filter2D(cardImage,-1,kernel)
+	median = cv2.medianBlur(cardImage,101)
+
+	height, width, channels = cardImage.shape
+	cardImage2 = cardImage.copy()
+	mean_val = cv2.mean(cardImage)
+	circleRadius = 200
+	cv2.circle(cardImage2, (width/2, height/2), circleRadius, mean_val, -1)
+
+	plt.subplot(2, 2, 1),plt.imshow(cardImage),plt.axis('off'),plt.title('cardImage')
+	plt.subplot(2, 2, 2),plt.imshow(blurred),plt.axis('off'),plt.title('blurred')
+	plt.subplot(2, 2, 3),plt.imshow(median),plt.axis('off'),plt.title('median')
+	plt.subplot(2, 2, 4),plt.imshow(cardImage2),plt.axis('off'),plt.title('average color')
+
+
+
 	plt.show()
+
+
+
+
+
+
+
 
 
 def decide_shape_from_extent(extent):
@@ -261,16 +317,23 @@ def decide_shape_from_extent(extent):
 
 
 # import image
-img = cv2.imread("set.jpg")
+img = cv2.imread("set2.jpg")
 
 contours = createContours(img) # img is the source image numpy array
 
 
 dst = [] # each element in dst is a rectangular, unwarped card.
-for c in contours:
-	dst.append(fixPerspective(c, img))
+# for c in contours:
+# 	dst.append(fixPerspective(c, img))
 
-identifyFeatures(dst[int(sys.argv[1])])
+dst.append(fixPerspective(contours[0], img))
+
+# identifyFeatures(dst[int(sys.argv[1])])
+
+# print "Colors:"
+
+# for d in dst:
+# 	print findColor(d)
 
 
 
@@ -285,5 +348,5 @@ identifyFeatures(dst[int(sys.argv[1])])
 # 	plt.subplot(num_rows, 3, num_rows*3 - idx),plt.imshow(d),plt.axis('off')
 
 # plt.show()
-# # End display the images ----------------
+# End display the images ----------------
 
