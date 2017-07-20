@@ -169,7 +169,9 @@ def findContourCorners2(contour, image): #done with second derivative
 #change the image using affine transform such that the contour fits the new image.
 #should turn the perspective warped cards into rectangles.
 def fixPerspective(contour, image):
-
+	# -----------------------------------------------
+	# Fix the perspective.                      
+	# -----------------------------------------------
 	# get image dimensions
 	height, width, channels = image.shape
 	
@@ -180,28 +182,27 @@ def fixPerspective(contour, image):
 
 	dest_rect = [[0,0], [width, 0], [0,height], [width, height]] #may have to make some negative
 
-
 	pts1 = np.float32(source)
 	pts2 = np.float32(dest_rect)
-
-	# print "pts1", pts1
-	# print "pts2", pts2
 
 	M = cv2.getPerspectiveTransform(pts1,pts2)
 	dst = cv2.warpPerspective(img,M,(width,height))
 
+	# -----------------------------------------------
+	# Correct White Balance                       
+	# -----------------------------------------------
 	img_inv = cv2.bitwise_not(dst)
-
-	white_inv = cv2.threshold(img_inv, 60, 255, cv2.THRESH_BINARY_INV)[1]
-
+	white_inv = cv2.threshold(img_inv, 50, 255, cv2.THRESH_TOZERO)[1]
 	white = cv2.bitwise_not(white_inv)
 
+	# -----------------------------------------------
+	# Display the images.                       
+	# -----------------------------------------------
+	# plt.subplot(1, 2, 1),plt.imshow(dst),plt.axis('off'),plt.title('dst')
+	# plt.subplot(1, 2, 2),plt.imshow(white_inv),plt.axis('off'),plt.title('white')
+	# plt.show()
 
-	plt.subplot(1, 2, 1),plt.imshow(dst),plt.axis('off'),plt.title('dst')
-	plt.subplot(1, 2, 2),plt.imshow(white_inv),plt.axis('off'),plt.title('white')
-	plt.show()
-
-	return dst
+	return white
 
 
 def identifyFeatures(img):
@@ -293,13 +294,6 @@ def findShading(cardImage):
 	plt.show()
 
 
-
-
-
-
-
-
-
 def decide_shape_from_extent(extent):
 	if (extent < 0.62):
 		return("diamond")
@@ -307,26 +301,67 @@ def decide_shape_from_extent(extent):
 		return("squiggle")
 	else:
 		return "oval"
+# -----------------------------------------------
+# Test Functions                    
+# -----------------------------------------------
+def test_all_fixPerspective(contours, img):
+	dst = []
+	for c in contours:
+		dst.append(fixPerspective(c,img))
+	print "Displaying images..."
+	displayImages(img, dst)
+
+def test_one_fixPerspective(contours, img, target_contour):
+	c = contours[target_contour]
+	dst = []
+	dst.append(fixPerspective(c,img))
+	displayImages(img, dst)
+
+
+def displayImages(img, dst):
+	# assuming in rows of 3
+	# probably either 4 or 5 cols.
+	num_rows = len(dst) / 3 + 1 #(one more for source)
+
+	plt.subplot(num_rows, 3, 1),plt.imshow(img),plt.axis('off') #display the source at top left
+
+	for idx, d in enumerate(dst):
+		plt.subplot(num_rows, 3, num_rows*3 - idx),plt.imshow(d),plt.axis('off')
+
+	plt.show()
+
+def runTests(contours, img):
+	print "Running tests given an image and contours."
+	print "Select:"
+	print "0 - Run fixPerspective on all contours."
+	print "1 - Run fixPerspective on one contour."
+	selection = int(raw_input())
+	if (selection == 0):
+		print "Running test_all_fixPerspective."
+		test_all_fixPerspective(contours, img)
+	if (selection == 1):
+		print "Running test_one_fixPerspective."
+		target_contour = int(raw_input("Choose a contour number [0-11]"))
+		test_one_fixPerspective(contours, img, target_contour)
+
+	print "All tests finished"
 
 
 
 
 
-
-#----------->>>>>>>>>>>>>--------------_>>>>>>>>>>>>>>>>>...------------__>>>>>>>>>>>>>>>
-
+# -----------------------------------------------
+# Program begins                       
+# -----------------------------------------------
 
 # import image
 img = cv2.imread("set2.jpg")
-
 contours = createContours(img) # img is the source image numpy array
 
+runTests(contours, img)
 
-dst = [] # each element in dst is a rectangular, unwarped card.
-# for c in contours:
-# 	dst.append(fixPerspective(c, img))
 
-dst.append(fixPerspective(contours[0], img))
+
 
 # identifyFeatures(dst[int(sys.argv[1])])
 
