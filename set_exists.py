@@ -50,7 +50,6 @@ def find_sets(cards):
 
 ##########################################################################################
 
-
 # If you end up assigning numbers to them, it would look something like:
 # myCard1 = Card(1,2,1,1)
 myCard1 = Card("Oval", "Red", "Striped", 1)
