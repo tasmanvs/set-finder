@@ -103,7 +103,6 @@ def findContourCorners(contour, image):
 
 	# cv2.drawContours(image, [contour], -1, (0,255,0), 2)
 
-
 	# circleRadius = 5
 	# cv2.circle(image, (tr.x, tr.y), circleRadius, (255, 0, 0), -1)
 	# cv2.circle(image, (tl.x, tl.y), circleRadius, (255, 255, 0), -1)
@@ -355,7 +354,7 @@ def runTests(contours, img):
 # -----------------------------------------------
 
 # import image
-img = cv2.imread("set2.jpg")
+img = cv2.imread("test_images/set2.jpg")
 contours = createContours(img) # img is the source image numpy array
 
 runTests(contours, img)
