@@ -48,6 +48,18 @@ def find_sets(cards):
 	# do the thing
 	return sets
 
+# cards is an array of three card objects
+def is_a_set(cards):
+	# do the thing
+	return True #replace this
+
+# should return a card object that is the correct card to complete the set.
+def find_third_card(card1, card2):
+	correct_card = Card("Oval", "Red", "Striped", 1)
+	return correct_card
+
+
+
 ##########################################################################################
 
 # If you end up assigning numbers to them, it would look something like:
