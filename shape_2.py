@@ -193,7 +193,8 @@ def fixPerspective(contour, image):
 	height, width, channels = dst.shape
 	shave_width = 20 # the number of pixels to shave off each edge
 	dst = dst[shave_width:height - shave_width, shave_width:width-shave_width]
-	white = filter_increaseColor_hsv(dst)
+	# white = filter_increaseColor_hsv(dst)
+	white = dst ##############################################################NEED TO FILTER MAYBE
 	# -----------------------------------------------
 	# Display the images.                       
 	# -----------------------------------------------
@@ -253,9 +254,6 @@ def identifyFeatures(img):
 
 	height, width, channels = img.shape
 
-	print "height is", height
-	print "width is", width
-
 	# img = img[50:height-50, 50:width-50]  # crop the image
 	img_inv = cv2.bitwise_not(img)
 	# NOTE: its img[y: y + h, x: x + w] and *not* img[x: x + w, y: y + h]
@@ -275,43 +273,45 @@ def identifyFeatures(img):
 	# clean up stuff outside of the contours we just detected.
 	filled_contours = img.copy()
 	for c in cnts:
-		cv2.fillConvexPoly(filled_contours, c, (0,0,0))
-
+		cv2.fillConvexPoly(filled_contours, c, (0,0,0)) # fill with black to use for mask later
 	gray = cv2.cvtColor(filled_contours, cv2.COLOR_BGR2GRAY)
-	mask = cv2.threshold(gray, 1, 255, cv2.THRESH_BINARY)[1]
+	mask = cv2.threshold(gray, 1, 255, cv2.THRESH_BINARY)[1] #remove everything that isn't exactly black
 	mask = cv2.bitwise_not(mask)
-
 	img_clean = cv2.bitwise_and(img, img, mask= mask)
 
+	# --- Detect Shape --- #
 	for c in cnts:
-		# cv2.drawContours(img, c, -1, (0,255,0), 2)
 		area = cv2.contourArea(c)
 		total_area += area
 		x,y,w,h = cv2.boundingRect(c)
 		rect_area = w*h
 		extents.append(float(area)/rect_area)
-	print "total area is", total_area
 
 	avg_extents = sum(extents)/len(extents)
 
 	shape = decide_shape_from_extent(avg_extents)
-	print "the shape is", shape
 
-	#determine the color of the shapes.
-
+	# crop to remove some weird stuff going on at edges.
 	singleShape = img_clean[y:y+h, x:x+w]
 
-
+	# --- Detect Color --- #
 	color = findColor(singleShape)
-	print "the color is", color
 
 	# print "the intensity is", findShading(singleShape)
 
-	number = len(cnts)
+	# --- Detect number --- #
+	number = len(cnts) #number of contours = number of shapes
 
-	print "the number is ", number #number of contours = number of shapes
+	# --- Detect Shading --- #
+	shading = findShading(singleShape)
 
-	return shape + " " + color + " " + str(number), img_clean
+
+	print "the shape is", shape
+	print "the color is", color
+	print "the number is ", number 
+	print "the shading is", shading, "\n"
+
+	return shape + " " + color + " " + str(number) + " " + shading, img_clean
 
 def findColor(cardImage):
 
@@ -341,14 +341,35 @@ def findShading(cardImage):
 	circleRadius = 200
 	cv2.circle(cardImage2, (width/2, height/2), circleRadius, mean_val, -1)
 
-	plt.subplot(2, 2, 1),plt.imshow(cardImage),plt.axis('off'),plt.title('cardImage')
-	plt.subplot(2, 2, 2),plt.imshow(blurred),plt.axis('off'),plt.title('blurred')
-	plt.subplot(2, 2, 3),plt.imshow(median),plt.axis('off'),plt.title('median')
-	plt.subplot(2, 2, 4),plt.imshow(cardImage2),plt.axis('off'),plt.title('average color')
+	#take a sample of the center color:
+	sample_x_radius = 25
+	sample_y_radius = 50
+	roi = blurred[height/2 - sample_y_radius:height/2 + sample_y_radius, width/2 - sample_x_radius:width/2 + sample_x_radius]
+	mean_center_val = cv2.mean(roi)
 
 
+	cv2.rectangle(cardImage, (width/2 - sample_x_radius, height/2 - sample_y_radius), (width/2 + sample_x_radius, height/2 + sample_y_radius), mean_center_val, -1)
 
-	plt.show()
+	# the sum of the mean_center_val is proportional to whiteness.
+	sum_mean = sum(mean_center_val) #note that median could do much better here
+	print "the sum_mean is", sum_mean
+
+	if (sum_mean > 225*3):
+		shading = "blank"
+	elif (sum_mean > 400):
+		shading = "striped"
+	else:
+		shading = "filled"
+
+
+	return shading
+
+	# plt.subplot(2, 2, 1),plt.imshow(cardImage),plt.axis('off'),plt.title('cardImage')
+	# plt.subplot(2, 2, 2),plt.imshow(blurred),plt.axis('off'),plt.title('blurred')
+	# plt.subplot(2, 2, 3),plt.imshow(median),plt.axis('off'),plt.title('median')
+	# plt.subplot(2, 2, 4),plt.imshow(cardImage2),plt.axis('off'),plt.title('average color')
+
+	# plt.show()
 
 def decide_shape_from_extent(extent):
 	if (extent < 0.62):
@@ -417,6 +438,13 @@ def displayImages(img, dst, additionalTitle = []):
 
 	plt.show()
 
+def displayContours(contours, img):
+	imgContours = img.copy()
+	for c in contours:
+		cv2.drawContours(imgContours, c, -1, (0,255,0), 20)
+	plt.imshow(imgContours),plt.axis('off'),plt.title("There are " + str(len(contours)) + " contours.")
+	plt.show()
+
 def runTests(contours, img):
 	print "Running tests given an image and contours."
 	print "Select:"
@@ -424,6 +452,7 @@ def runTests(contours, img):
 	print "1 - Run fixPerspective on one contour."
 	print "2 - Run identifyFeatures on one contour."
 	print "3 - Run identifyFeatures on all contours."
+	print "4 - Display contours"
 	selection = int(raw_input())
 	if (selection == 0):
 		print "Running test_all_fixPerspective."
@@ -439,6 +468,9 @@ def runTests(contours, img):
 	elif (selection == 3):
 		print "Running test_all_identifyFeatures." 
 		test_all_identifyFeatures(contours, img)
+	elif (selection == 4):
+		print "Running displayContours."
+		displayContours(contours, img)
 
 
 	print "All tests finished"
@@ -448,30 +480,15 @@ def runTests(contours, img):
 # -----------------------------------------------
 
 # import image as BGR by default
-img = cv2.imread("test_images/set.jpg")
+
+imageNumber = sys.argv[1]
+
+img = cv2.imread("test_images/set" + imageNumber + ".jpg")
+
+
+print "creating contours"
 contours = createContours(img) # img is the source image numpy array
+print "contours have been created. There are", len(contours), "contours."
 
 runTests(contours, img)
-
-# identifyFeatures(dst[int(sys.argv[1])])
-
-# print "Colors:"
-
-# for d in dst:
-# 	print findColor(d)
-
-
-
-# # Display the images: ------------------
-# # assuming in rows of 3
-# # probably either 4 or 5 cols.
-# num_rows = len(contours) / 3 + 1 #(one more for source)
-
-# plt.subplot(num_rows, 3, 1),plt.imshow(img),plt.axis('off') #display the source at top left
-
-# for idx, d in enumerate(dst):
-# 	plt.subplot(num_rows, 3, num_rows*3 - idx),plt.imshow(d),plt.axis('off')
-
-# plt.show()
-# End display the images ----------------
 
