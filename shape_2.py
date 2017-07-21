@@ -3,7 +3,7 @@ import matplotlib.pyplot as plt
 import imutils
 import numpy as np
 
-import sys # for testing
+import sys # for command line arguments
 
 #ok I don't even need this. Each coord could just be stored in a numpy array
 class coord(object):
@@ -40,20 +40,19 @@ class coord(object):
 	def asArray(self): #eugh...
 		return [self.x, self.y]
 
-# should change this to create a seperate image for each card
+# Returns an array of contours. Each contour corresponds to a found card.
+# Also used to find the contours of the shapes within each card.
+# May have to go in and change the threshold value. Seems to change with lighting.
 def createContours(image):
-
 
 	# preprocess the image
 	gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
 	# blurred = cv2.GaussianBlur(gray, (5, 5), 0)
-	thresh = cv2.threshold(gray, 200, 255, cv2.THRESH_BINARY)[1]
+	thresh = cv2.threshold(gray, 200, 255, cv2.THRESH_BINARY)[1] #may want to chose a different thresh
 
 	# find contours in the thresholded image
-	cnts = cv2.findContours(thresh.copy(), cv2.RETR_EXTERNAL,
-		cv2.CHAIN_APPROX_SIMPLE)
+	cnts = cv2.findContours(thresh.copy(), cv2.RETR_EXTERNAL,cv2.CHAIN_APPROX_SIMPLE)
 	cnts = cnts[0] if imutils.is_cv2() else cnts[1] #version check?
-
 
 	# loop over the contours
 	for c in cnts:
@@ -65,6 +64,8 @@ def createContours(image):
 		if (M["m00"] != 0):
 			cX = int(M["m10"] / M["m00"])
 			cY = int(M["m01"] / M["m00"])
+
+		# cv2.drawContours(image, c, -1, (0,255,0), 20)
 
 	boundingRects = [cv2.boundingRect(c) for c in cnts] #returns x,y,width,height (x,y) is top left
 	boundingRects_points = []
@@ -165,8 +166,7 @@ def findContourCorners2(contour, image): #done with second derivative
 	cv2.circle(image, (highest_coords[2].x, highest_coords[2].y), circleRadius, (255, 0, 255), -1)
 	cv2.circle(image, (highest_coords[3].x, highest_coords[3].y), circleRadius, (0, 255, 255), -1)
 
-#change the image using affine transform such that the contour fits the new image.
-#should turn the perspective warped cards into rectangles.
+# Makes a card rectangular.
 def fixPerspective(contour, image):
 	# -----------------------------------------------
 	# Fix the perspective.                      
@@ -178,8 +178,7 @@ def fixPerspective(contour, image):
 	source = findContourCorners(contour, image)
 
 	# dest_rect = tl, tr, bl, br
-
-	dest_rect = [[0,0], [width, 0], [0,height], [width, height]] #may have to make some negative
+	dest_rect = [[0,0], [width, 0], [0,height], [width, height]]
 
 	pts1 = np.float32(source)
 	pts2 = np.float32(dest_rect)
@@ -190,10 +189,11 @@ def fixPerspective(contour, image):
 	# -----------------------------------------------
 	# Correct White Balance                       
 	# -----------------------------------------------
-	img_inv = cv2.bitwise_not(dst)
-	white_inv = cv2.threshold(img_inv, 50, 255, cv2.THRESH_TOZERO)[1]
-	white = cv2.bitwise_not(white_inv)
-
+	# crop the image:
+	height, width, channels = dst.shape
+	shave_width = 20 # the number of pixels to shave off each edge
+	dst = dst[shave_width:height - shave_width, shave_width:width-shave_width]
+	white = filter_increaseColor_hsv(dst)
 	# -----------------------------------------------
 	# Display the images.                       
 	# -----------------------------------------------
@@ -203,6 +203,50 @@ def fixPerspective(contour, image):
 
 	return white
 
+# -----------------------------------------------
+# Filter functions
+# Various Filters that should allow better processing of the image. HSV works best to remove gray.                   
+# -----------------------------------------------
+def filter_increaseColor_hsv(img):
+	# Convert BGR to HSV
+	hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
+	# define range of color in HSV
+	# we want to let through any hue, and any value. We want to remove the white with low saturation
+	lower_color = np.array([0,15,0])
+	upper_color = np.array([255,255,255])
+	# Threshold the HSV image to get only blue colors
+	mask = cv2.inRange(hsv, lower_color, upper_color)
+	inv_mask = cv2.bitwise_not(mask)
+	# Bitwise-AND mask and original image
+	result = cv2.bitwise_and(img,img, mask= mask)
+	print mask.shape
+	black = cv2.bitwise_xor(img,img)
+	white = cv2.bitwise_not(black)
+	final = result + white
+
+	#dont have to convert back to rgb?
+
+	return final
+
+def filter_increaseColor_bgr(img):
+
+	copy = img.copy()
+
+	# shape looks like(469, 760, 3) (number of y pixels, number of x pixels, number of channels)
+	# for any pixel, if r = g = b, set it to 255, 255, 255. Hopefully this will make the gray go away.
+	for  y_idx, y_val in enumerate(img):
+		for x_idx, pixel in enumerate(y_val):
+			if (roughlyEqual(pixel,10) == True):
+				copy[y_idx][x_idx][:] = 255
+
+	return copy
+# returns true if vals are within some threshold of their average
+def roughlyEqual(vals, thresh):
+	avg = sum(vals)/len(vals)
+	for val in vals:
+		if (abs(val - avg) > thresh):
+			return False
+	return True
 
 def identifyFeatures(img):
 	cnts = createContours(img)
@@ -218,21 +262,29 @@ def identifyFeatures(img):
 
 	# preprocess the image
 	gray = cv2.cvtColor(img_inv, cv2.COLOR_BGR2GRAY)
-
 	thresh = cv2.threshold(gray, 80, 255, cv2.THRESH_BINARY)[1]
-
 	# find contours in the thresholded image
-	cnts = cv2.findContours(thresh.copy(), cv2.RETR_EXTERNAL,
-		cv2.CHAIN_APPROX_SIMPLE)
+	cnts = cv2.findContours(thresh.copy(), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 	cnts = cnts[0] if imutils.is_cv2() else cnts[1] #version check?
-
-	print "there are ", len(cnts), "contours/shapes!" #number of contours = number of shapes
 
 	#compare the area of the bounding rectangle with the area of the contour
 	extents = []
 	total_area = 0
+
+
+	# clean up stuff outside of the contours we just detected.
+	filled_contours = img.copy()
 	for c in cnts:
-		# cv2.drawContours(img, c, -1, (0,255,0), 1)
+		cv2.fillConvexPoly(filled_contours, c, (0,0,0))
+
+	gray = cv2.cvtColor(filled_contours, cv2.COLOR_BGR2GRAY)
+	mask = cv2.threshold(gray, 1, 255, cv2.THRESH_BINARY)[1]
+	mask = cv2.bitwise_not(mask)
+
+	img_clean = cv2.bitwise_and(img, img, mask= mask)
+
+	for c in cnts:
+		# cv2.drawContours(img, c, -1, (0,255,0), 2)
 		area = cv2.contourArea(c)
 		total_area += area
 		x,y,w,h = cv2.boundingRect(c)
@@ -241,19 +293,25 @@ def identifyFeatures(img):
 	print "total area is", total_area
 
 	avg_extents = sum(extents)/len(extents)
+
 	shape = decide_shape_from_extent(avg_extents)
 	print "the shape is", shape
 
 	#determine the color of the shapes.
 
-	singleShape = img[y:y+h, x:x+w]
+	singleShape = img_clean[y:y+h, x:x+w]
 
 
-	print "the color is", findColor(singleShape)
+	color = findColor(singleShape)
+	print "the color is", color
 
 	# print "the intensity is", findShading(singleShape)
 
+	number = len(cnts)
 
+	print "the number is ", number #number of contours = number of shapes
+
+	return shape + " " + color + " " + str(number), img_clean
 
 def findColor(cardImage):
 
@@ -292,7 +350,6 @@ def findShading(cardImage):
 
 	plt.show()
 
-
 def decide_shape_from_extent(extent):
 	if (extent < 0.62):
 		return("diamond")
@@ -300,9 +357,10 @@ def decide_shape_from_extent(extent):
 		return("squiggle")
 	else:
 		return "oval"
+
 # -----------------------------------------------
-# Test Functions                    
-# -----------------------------------------------
+# Test Functions                    				
+# -----------------------------------------------		
 def test_all_fixPerspective(contours, img):
 	dst = []
 	for c in contours:
@@ -316,16 +374,46 @@ def test_one_fixPerspective(contours, img, target_contour):
 	dst.append(fixPerspective(c,img))
 	displayImages(img, dst)
 
+def test_one_identifyFeatures(contours, img, target_contour):
+	c = contours[target_contour]
+	dst = []
+	card_images = []
+	dst.append(fixPerspective(c,img))
+	title, card_img = identifyFeatures(dst[0])
+	card_images.append(card_img)
+	displayImages(img, card_images, [title])
 
-def displayImages(img, dst):
+def test_all_identifyFeatures(contours, img):
+	dst = []
+	for c in contours:
+		dst.append(fixPerspective(c,img))
+	titles = []
+	card_images = []
+	for d in dst:
+		title, card_img = identifyFeatures(d)
+		titles.append(title)
+		card_images.append(card_img)
+
+
+	displayImages(img, card_images, titles)
+
+def displayImages(img, dst, additionalTitle = []):
 	# assuming in rows of 3
 	# probably either 4 or 5 cols.
 	num_rows = len(dst) / 3 + 1 #(one more for source)
 
-	plt.subplot(num_rows, 3, 1),plt.imshow(img),plt.axis('off') #display the source at top left
-
+	plt.subplot(num_rows, 3, 1),plt.imshow(img),plt.title("Original") #display the source at top left
+	plt.xticks([])
+	plt.yticks([])
 	for idx, d in enumerate(dst):
-		plt.subplot(num_rows, 3, num_rows*3 - idx),plt.imshow(d),plt.axis('off')
+		plt.subplot(num_rows, 3, num_rows*3 - idx)
+		if (idx < len(additionalTitle)):
+			plt.title(str(idx) + ": " + additionalTitle[idx])
+		else:
+			plt.title(str(idx))
+		plt.xticks([])
+		plt.yticks([])
+		plt.imshow(d)
 
 	plt.show()
 
@@ -334,33 +422,36 @@ def runTests(contours, img):
 	print "Select:"
 	print "0 - Run fixPerspective on all contours."
 	print "1 - Run fixPerspective on one contour."
+	print "2 - Run identifyFeatures on one contour."
+	print "3 - Run identifyFeatures on all contours."
 	selection = int(raw_input())
 	if (selection == 0):
 		print "Running test_all_fixPerspective."
 		test_all_fixPerspective(contours, img)
-	if (selection == 1):
+	elif (selection == 1):
 		print "Running test_one_fixPerspective."
 		target_contour = int(raw_input("Choose a contour number [0-11]"))
 		test_one_fixPerspective(contours, img, target_contour)
+	elif (selection == 2):
+		print "Running test_one_identifyFeatures." 
+		target_contour = int(raw_input("Choose a contour number [0-11]"))
+		test_one_identifyFeatures(contours, img, target_contour)
+	elif (selection == 3):
+		print "Running test_all_identifyFeatures." 
+		test_all_identifyFeatures(contours, img)
+
 
 	print "All tests finished"
-
-
-
-
 
 # -----------------------------------------------
 # Program begins                       
 # -----------------------------------------------
 
-# import image
-img = cv2.imread("test_images/set2.jpg")
+# import image as BGR by default
+img = cv2.imread("test_images/set.jpg")
 contours = createContours(img) # img is the source image numpy array
 
 runTests(contours, img)
-
-
-
 
 # identifyFeatures(dst[int(sys.argv[1])])
 
