@@ -47,8 +47,15 @@ def createContours(image):
 
 	# preprocess the image
 	gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-	# blurred = cv2.GaussianBlur(gray, (5, 5), 0)
-	thresh = cv2.threshold(gray, 200, 255, cv2.THRESH_BINARY)[1] #may want to chose a different thresh
+	median_blurred = cv2.medianBlur(gray,21)
+
+	thresh = cv2.threshold(median_blurred, 150, 255, cv2.THRESH_BINARY)[1] #may want to chose a different thresh
+	# plt.subplot(1, 2, 1),plt.imshow(median_blurred),plt.axis('off'),plt.title('blurred')
+	# plt.subplot(1, 2, 2),plt.imshow(thresh),plt.axis('off'),plt.title('thresh')
+	# plt.show()
+
+
+
 
 	# find contours in the thresholded image
 	cnts = cv2.findContours(thresh.copy(), cv2.RETR_EXTERNAL,cv2.CHAIN_APPROX_SIMPLE)
@@ -484,7 +491,6 @@ def runTests(contours, img):
 imageNumber = sys.argv[1]
 
 img = cv2.imread("test_images/set" + imageNumber + ".jpg")
-
 
 print "creating contours"
 contours = createContours(img) # img is the source image numpy array
